@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: coupon-api
+    runtime: node
+    rootDir: .
+    buildCommand: npm install && npx prisma generate
+    startCommand: npm start
+    plan: free
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false        # paste your Neon URL in Render dashboard
+      - key: FRONTEND_URL
+        sync: false        # paste your Vercel URL
+      - key: ADMIN_API_KEY
+        generateValue: true

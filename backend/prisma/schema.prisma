@@ -1,0 +1,78 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Merchant {
+  id        Int       @id @default(autoincrement())
+  name      String
+  slug      String    @unique
+  domain    String?
+  logo      String?
+  coupons   Coupon[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+model Category {
+  id      Int              @id @default(autoincrement())
+  name    String
+  slug    String           @unique
+  icon    String?
+  coupons CouponCategory[]
+}
+
+model Coupon {
+  id          Int              @id @default(autoincrement())
+  title       String
+  code        String?          // null = deal (no code needed)
+  type        String           @default("code") // 'code' | 'deal' | 'cashback'
+  discount    String?          // human-readable: "20% off", "Flat ₹500"
+  description String?
+  expiryDate  DateTime?
+  merchantId  Int
+  merchant    Merchant         @relation(fields: [merchantId], references: [id])
+  sourceUrl   String
+  source      String           // 'coupondunia' | 'grabon' | 'manual'
+  fingerprint String           @unique // SHA256(merchantSlug+code+title) for dedup
+  clicks      Int              @default(0)
+  isActive    Boolean          @default(true)
+  isVerified  Boolean          @default(false)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  categories  CouponCategory[]
+
+  @@index([merchantId])
+  @@index([isActive, createdAt(sort: Desc)])
+  @@index([source])
+}
+
+model CouponCategory {
+  couponId   Int
+  categoryId Int
+  coupon     Coupon   @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  category   Category @relation(fields: [categoryId], references: [id])
+
+  @@id([couponId, categoryId])
+}
+
+model ScrapeJob {
+  id           Int       @id @default(autoincrement())
+  source       String    // 'coupondunia' | 'grabon'
+  targetUrl    String
+  status       String    @default("pending") // 'pending' | 'running' | 'done' | 'failed'
+  couponsFound Int       @default(0)
+  newCoupons   Int       @default(0)
+  error        String?
+  triggeredBy  String    @default("scheduler") // 'scheduler' | 'admin'
+  startedAt    DateTime?
+  completedAt  DateTime?
+  createdAt    DateTime  @default(now())
+
+  @@index([status])
+  @@index([source, createdAt(sort: Desc)])
+}
