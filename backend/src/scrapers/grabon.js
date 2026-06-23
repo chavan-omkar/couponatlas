@@ -12,37 +12,62 @@ class GrabOnScraper extends BaseScraper {
   constructor() {
     super('GrabOn');
     this.baseUrl = 'https://www.grabon.in';
-    this.storeUrls = [
-      '/amazon-coupons/',
-      '/flipkart-coupons/',
-      '/myntra-coupons/',
-      '/ajio-coupons/',
-      '/nykaa-coupons/',
-      '/swiggy-coupons/',
-      '/zomato-coupons/',
-      '/meesho-coupons/',
-      '/snapdeal-coupons/',
-      '/paytm-coupons/',
+    this.stores = [
+      { path: '/amazon-coupons/',   name: 'Amazon' },
+      { path: '/flipkart-coupons/', name: 'Flipkart' },
+      { path: '/myntra-coupons/',   name: 'Myntra' },
+      { path: '/ajio-coupons/',     name: 'AJIO' },
+      { path: '/nykaa-coupons/',    name: 'Nykaa' },
+      { path: '/swiggy-coupons/',   name: 'Swiggy' },
+      { path: '/zomato-coupons/',   name: 'Zomato' },
+      { path: '/meesho-coupons/',   name: 'Meesho' },
+      { path: '/snapdeal-coupons/', name: 'Snapdeal' },
+      { path: '/paytm-coupons/',    name: 'Paytm' },
     ];
+  }
+
+  cleanText(raw) {
+    if (!raw) return null;
+    return raw
+      .replace(/\.cls-[\w-]+\{[^}]*\}/g, '')
+      .replace(/\d+\s+People\s+Used\s+(Today|This Week)/gi, '')
+      .replace(/\bVerified\b/gi, '')
+      .replace(/See\s+more[\s\S]*?See\s+less/gi, '')
+      .replace(/Get\s+Coupon/gi, '')
+      .replace(/Get\s+Deal/gi, '')
+      .replace(/\s{2,}/g, ' ')
+      .trim() || null;
+  }
+
+  cleanCode(raw) {
+    if (!raw) return null;
+    const cleaned = raw
+      .replace(/GET\s+COUPON/gi, '')
+      .replace(/GET\s+DEAL/gi, '')
+      .replace(/COPY/gi, '')
+      .replace(/\s+/g, '')
+      .trim();
+    if (/^[A-Z0-9]{3,20}$/.test(cleaned)) return cleaned;
+    return null;
   }
 
   async scrape() {
     const allCoupons = [];
 
-    for (const storePath of this.storeUrls) {
+    for (const store of this.stores) {
       try {
-        const coupons = await this.scrapeStorePage(`${this.baseUrl}${storePath}`);
+        const coupons = await this.scrapeStorePage(`${this.baseUrl}${store.path}`, store.name);
         allCoupons.push(...coupons);
         await new Promise((r) => setTimeout(r, 1500 + Math.random() * 1000));
       } catch (err) {
-        logger.error(`[${this.name}] Failed to scrape ${storePath}: ${err.message}`);
+        logger.error(`[${this.name}] Failed to scrape ${store.path}: ${err.message}`);
       }
     }
 
     return allCoupons;
   }
 
-  async scrapeStorePage(url) {
+  async scrapeStorePage(url, merchantName) {
     const page = await this.newPage();
     const coupons = [];
 
@@ -168,16 +193,23 @@ class GrabOnScraper extends BaseScraper {
       }, url);
 
       for (const card of cards) {
+        const title = this.cleanText(card.title);
+        if (!title) continue;
         coupons.push({
-          ...card,
-          merchantName: merchantName?.trim() || 'Unknown',
+          title,
+          code: this.cleanCode(card.code),
+          type: card.type,
+          discount: this.cleanText(card.discount) || null,
+          description: this.cleanText(card.description) || null,
           expiryDate: this.parseExpiry(card.expiryRaw),
+          merchantName,
+          sourceUrl: url,
           source: 'grabon',
-          categories: this.inferCategories(merchantName || ''),
+          categories: this.inferCategories(merchantName),
         });
       }
 
-      logger.info(`[${this.name}] ${url} → ${coupons.length} coupons`);
+      logger.info(`[${this.name}] ${merchantName} → ${coupons.length} coupons`);
     } finally {
       await page.context().close();
     }

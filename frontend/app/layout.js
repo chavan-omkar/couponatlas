@@ -3,7 +3,7 @@ import Header from '../components/Header';
 import AdUnit from '../components/AdUnit';
 
 export const metadata = {
-  title: 'CouponHive — Best Coupons & Deals',
+  title: 'CouponAtlas — Best Coupons & Deals',
   description: 'Find the best coupons, promo codes, and deals from top Indian and global brands.',
 };
 
@@ -36,7 +36,7 @@ export default function RootLayout({ children }) {
             <AdUnit zone="footer" />
           </div>
           <p className="text-center text-xs text-gray-400 mt-4">
-            © {new Date().getFullYear()} CouponHive. All rights reserved.
+            © {new Date().getFullYear()} CouponAtlas. All rights reserved.
           </p>
         </footer>
       </body>

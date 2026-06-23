@@ -3,186 +3,146 @@
 const BaseScraper = require('./base-scraper');
 const logger = require('../utils/logger');
 
-/**
- * CouponDunia scraper
- * Scrapes the "All Stores" listing and individual store pages.
- * Target: https://www.coupondunia.in
- */
 class CouponDuniaScraper extends BaseScraper {
   constructor() {
     super('CouponDunia');
     this.baseUrl = 'https://www.coupondunia.in';
-    // Top stores to scrape — extend this list via admin
-    this.storeUrls = [
-      '/amazon',
-      '/flipkart',
-      '/myntra',
-      '/ajio',
-      '/nykaa',
-      '/swiggy',
-      '/zomato',
-      '/meesho',
-      '/snapdeal',
-      '/paytm',
+    this.stores = [
+      { path: '/amazon',   name: 'Amazon' },
+      { path: '/flipkart', name: 'Flipkart' },
+      { path: '/myntra',   name: 'Myntra' },
+      { path: '/ajio',     name: 'AJIO' },
+      { path: '/nykaa',    name: 'Nykaa' },
+      { path: '/swiggy',   name: 'Swiggy' },
+      { path: '/zomato',   name: 'Zomato' },
+      { path: '/meesho',   name: 'Meesho' },
+      { path: '/snapdeal', name: 'Snapdeal' },
+      { path: '/paytm',    name: 'Paytm' },
     ];
+  }
+
+  /** Remove SVG CSS, usage stats, button text from scraped strings */
+  cleanText(raw) {
+    if (!raw) return null;
+    return raw
+      .replace(/\.cls-[\w-]+\{[^}]*\}/g, '')   // strip .cls-xxx{...} CSS
+      .replace(/\d+\s+People\s+Used\s+Today/gi, '')
+      .replace(/\bVerified\b/gi, '')
+      .replace(/See\s+more[\s\S]*?See\s+less/gi, '')
+      .replace(/Get\s+Coupon/gi, '')
+      .replace(/Get\s+Deal/gi, '')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+  }
+
+  /** Extract just the coupon code — strip any trailing button text */
+  cleanCode(raw) {
+    if (!raw) return null;
+    // Remove "GET COUPON", "COPY", "GET DEAL" suffixes
+    const cleaned = raw
+      .replace(/GET\s+COUPON/gi, '')
+      .replace(/GET\s+DEAL/gi, '')
+      .replace(/COPY/gi, '')
+      .replace(/\s+/g, '')
+      .trim();
+    // Must look like a real code: 3-20 uppercase alphanumeric chars
+    if (/^[A-Z0-9]{3,20}$/.test(cleaned)) return cleaned;
+    return null;
   }
 
   async scrape() {
     const allCoupons = [];
-
-    for (const storePath of this.storeUrls) {
+    for (const store of this.stores) {
       try {
-        const coupons = await this.scrapeStorePage(`${this.baseUrl}${storePath}`);
+        const coupons = await this.scrapeStorePage(
+          `${this.baseUrl}${store.path}`,
+          store.name
+        );
         allCoupons.push(...coupons);
-        // Polite delay between stores
         await new Promise((r) => setTimeout(r, 1500 + Math.random() * 1000));
       } catch (err) {
-        logger.error(`[${this.name}] Failed to scrape ${storePath}: ${err.message}`);
+        logger.error(`[${this.name}] Failed ${store.path}: ${err.message}`);
       }
     }
-
     return allCoupons;
   }
 
-  async scrapeStorePage(url) {
+  async scrapeStorePage(url, merchantName) {
     const page = await this.newPage();
     const coupons = [];
 
     try {
       await this.navigate(page, url);
 
-      // Extract merchant name from the page heading or URL
-      const merchantName = await page
-        .locator('h1, .store-name, [class*="store-title"]')
-        .first()
-        .textContent()
-        .catch(() => url.split('/').pop());
-
-      // Wait for coupon cards to load
       await page
-        .waitForSelector(
-          '[class*="coupon"], [class*="offer"], [class*="deal"], .card',
-          { timeout: 10000 }
-        )
+        .waitForSelector('[class*="coupon"], [class*="offer"], [class*="deal"]', { timeout: 10000 })
         .catch(() => {});
 
-      // Scroll to trigger lazy-loading
       await page.evaluate(() => window.scrollBy(0, window.innerHeight * 2));
       await page.waitForTimeout(1000);
 
-      // Extract all coupon cards using multiple selector strategies
-      const cards = await page.evaluate((sourceUrl) => {
+      const cards = await page.evaluate(() => {
         const results = [];
-
-        // Try multiple selectors for coupon containers
         const selectors = [
-          '[class*="coupon-card"]',
-          '[class*="coupon-item"]',
-          '[class*="offer-card"]',
-          '[class*="deal-card"]',
-          '[class*="coupon_card"]',
-          '.coupon',
-          '.offer',
+          '[class*="coupon-card"]', '[class*="coupon-item"]',
+          '[class*="offer-card"]', '[class*="deal-card"]', '.coupon',
         ];
 
         let containers = [];
         for (const sel of selectors) {
           const found = document.querySelectorAll(sel);
-          if (found.length > 0) {
-            containers = Array.from(found);
-            break;
-          }
+          if (found.length > 0) { containers = Array.from(found); break; }
         }
 
         for (const card of containers) {
-          const getText = (selList) => {
-            for (const s of selList) {
+          const getText = (sels) => {
+            for (const s of sels) {
               const el = card.querySelector(s);
-              if (el) return el.textContent.trim();
+              if (el) return el.innerText || el.textContent || '';
             }
-            return null;
+            return '';
           };
 
-          const title = getText([
-            '[class*="title"]',
-            '[class*="heading"]',
-            'h3',
-            'h2',
-            'strong',
-          ]);
+          const title = getText(['h3', 'h2', '[class*="title"]', '[class*="heading"]', 'strong']).trim();
+          if (!title || title.length < 5) continue;
 
-          if (!title) continue;
-
-          // Code: look for a "reveal code" button or a visible code element
-          let code = getText([
-            '[class*="coupon-code"]',
-            '[class*="code"]',
-            '[data-coupon-code]',
-            '[class*="offer-code"]',
-          ]);
-
-          // Sometimes the code is in a data attribute
-          if (!code) {
-            const codeEl = card.querySelector('[data-coupon-code], [data-code]');
-            code = codeEl
-              ? codeEl.getAttribute('data-coupon-code') ||
-                codeEl.getAttribute('data-code')
-              : null;
+          // Code: prefer data attributes over innerText to avoid button label pollution
+          let code = null;
+          const codeEl = card.querySelector('[data-coupon-code], [data-code], [class*="coupon-code"], [class*="code-text"]');
+          if (codeEl) {
+            code = codeEl.getAttribute('data-coupon-code')
+              || codeEl.getAttribute('data-code')
+              || (codeEl.innerText || '').trim();
           }
 
-          // Remove "GET CODE", "COPY", placeholder text
-          if (code && /^(get|copy|show|reveal|click)/i.test(code.trim())) {
-            code = null;
-          }
+          const discount = getText(['[class*="discount"]', '[class*="off"]', '[class*="save"]']).trim();
+          const description = getText(['[class*="description"]', '[class*="desc"]', 'p']).trim();
+          const expiry = getText(['time', '[class*="expir"]', '[class*="valid"]']).trim();
 
-          const discount = getText([
-            '[class*="discount"]',
-            '[class*="off"]',
-            '[class*="save"]',
-            '[class*="percent"]',
-          ]);
-
-          const description = getText([
-            '[class*="description"]',
-            '[class*="desc"]',
-            'p',
-          ]);
-
-          const expiry = getText([
-            '[class*="expiry"]',
-            '[class*="expire"]',
-            '[class*="valid"]',
-            'time',
-          ]);
-
-          // Determine type
-          const type = code ? 'code' : 'deal';
-
-          results.push({
-            title,
-            code: code ? code.toUpperCase().trim() : null,
-            type,
-            discount: discount || null,
-            description: description || null,
-            expiryRaw: expiry || null,
-            sourceUrl,
-          });
+          results.push({ title, code, discount, description, expiryRaw: expiry, type: code ? 'code' : 'deal' });
         }
-
         return results;
-      }, url);
+      });
 
       for (const card of cards) {
+        const title = this.cleanText(card.title);
+        if (!title) continue;
+
         coupons.push({
-          ...card,
-          merchantName: merchantName?.trim() || url.split('/').pop(),
+          title,
+          code: this.cleanCode(card.code),
+          type: card.type,
+          discount: this.cleanText(card.discount) || null,
+          description: this.cleanText(card.description) || null,
           expiryDate: this.parseExpiry(card.expiryRaw),
+          merchantName,   // use the hardcoded name, not scraped h1
+          sourceUrl: url,
           source: 'coupondunia',
-          categories: this.inferCategories(merchantName || ''),
+          categories: this.inferCategories(merchantName),
         });
       }
 
-      logger.info(`[${this.name}] ${url} → ${coupons.length} coupons`);
+      logger.info(`[${this.name}] ${merchantName} → ${coupons.length} coupons`);
     } finally {
       await page.context().close();
     }
@@ -190,14 +150,12 @@ class CouponDuniaScraper extends BaseScraper {
     return coupons;
   }
 
-  /** Infer categories from merchant name */
   inferCategories(merchantName) {
     const name = merchantName.toLowerCase();
     if (/amazon|flipkart|snapdeal|meesho/.test(name)) return ['Shopping', 'E-commerce'];
-    if (/myntra|ajio|nykaa|fashion/.test(name)) return ['Fashion', 'Clothing'];
-    if (/swiggy|zomato|food/.test(name)) return ['Food & Dining'];
-    if (/paytm|phonepe|gpay/.test(name)) return ['Payments', 'Wallet'];
-    if (/hotel|travel|flight|makemytrip/.test(name)) return ['Travel'];
+    if (/myntra|ajio|nykaa/.test(name)) return ['Fashion', 'Clothing'];
+    if (/swiggy|zomato/.test(name)) return ['Food & Dining'];
+    if (/paytm|phonepe/.test(name)) return ['Payments', 'Wallet'];
     return ['Shopping'];
   }
 }

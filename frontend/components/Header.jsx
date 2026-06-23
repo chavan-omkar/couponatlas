@@ -19,7 +19,7 @@ export default function Header() {
         {/* Logo */}
         <Link href="/" className="flex items-center gap-2 shrink-0">
           <span className="text-2xl">🏷️</span>
-          <span className="font-extrabold text-xl text-brand-600 hidden sm:block">CouponHive</span>
+          <span className="font-extrabold text-xl text-brand-600 hidden sm:block">CouponAtlas</span>
         </Link>
 
         {/* Search */}
