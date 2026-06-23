@@ -34,12 +34,6 @@ jobs:
           - couponzguru
           - food-direct
 
-    # Skip sources not selected in manual trigger
-    if: >
-      github.event_name == 'schedule' ||
-      github.event.inputs.source == 'all' ||
-      github.event.inputs.source == matrix.source
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -71,7 +65,13 @@ jobs:
 
       - name: Run scraper — ${{ matrix.source }}
         working-directory: backend
-        run: node scripts/scrape.js ${{ matrix.source }}
+        run: |
+          INPUT="${{ github.event.inputs.source }}"
+          if [ -z "$INPUT" ] || [ "$INPUT" = "all" ] || [ "$INPUT" = "${{ matrix.source }}" ]; then
+            node scripts/scrape.js ${{ matrix.source }}
+          else
+            echo "Skipping ${{ matrix.source }} (manual trigger selected: $INPUT)"
+          fi
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           NODE_ENV: production
