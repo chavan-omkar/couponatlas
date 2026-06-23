@@ -7,70 +7,58 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// ─── Merchant ────────────────────────────────────────────────────────────────
 model Merchant {
   id        Int      @id @default(autoincrement())
-  name      String   @db.VarChar(120)
-  slug      String   @unique @db.VarChar(120)
-  domain    String?  @db.VarChar(120)
-  logo      String?  @db.VarChar(300)
+  name      String
+  slug      String   @unique
+  domain    String?
+  logo      String?
   coupons   Coupon[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
 
-// ─── Category ────────────────────────────────────────────────────────────────
 model Category {
   id      Int              @id @default(autoincrement())
-  name    String           @db.VarChar(60)
-  slug    String           @unique @db.VarChar(60)
-  icon    String?          @db.VarChar(60)
+  name    String
+  slug    String           @unique
+  icon    String?
   coupons CouponCategory[]
 }
 
-// ─── Coupon ──────────────────────────────────────────────────────────────────
 model Coupon {
   id          Int       @id @default(autoincrement())
-
-  // User-facing text — left as TEXT (no VarChar) since scraped content varies widely
   title       String
+  code        String?
+  type        String    @default("code")
+  discount    String?
   description String?
-
-  // Short bounded fields — VarChar avoids TOAST for these
-  code        String?  @db.VarChar(30)            // real codes are ≤ 20 chars
-  type        String   @default("code") @db.VarChar(10) // 'code' | 'deal' | 'cashback'
-  discount    String?  @db.VarChar(80)            // "Flat ₹500 off", "20% off"
-
   expiryDate  DateTime?
 
   merchantId  Int
   merchant    Merchant  @relation(fields: [merchantId], references: [id])
 
-  // sourceUrl left as TEXT — some sites have very long query-string URLs
   sourceUrl   String
-  source      String   @db.VarChar(30)            // 'coupondunia' | 'grabon' | 'direct' …
-  fingerprint String   @unique @db.Char(64)       // SHA-256 hex = exactly 64 chars
+  source      String
+  fingerprint String    @unique
 
-  // SmallInt: only ever 1, 2, or 3 — saves 2 bytes per row vs Int
-  priority    Int      @default(3) @db.SmallInt   // 1=direct code, 2=bank code, 3=deal
+  // SmallInt: only 1/2/3 — saves 2 bytes per row, no ALTER needed on existing INT data
+  priority    Int       @default(3) @db.SmallInt
 
-  clicks      Int      @default(0)
-  isActive    Boolean  @default(true)
-  isVerified  Boolean  @default(false)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  clicks      Int       @default(0)
+  isActive    Boolean   @default(true)
+  isVerified  Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
   categories  CouponCategory[]
 
-  // Covers: WHERE isActive=true ORDER BY priority, isVerified DESC, clicks DESC
+  // Replaces the old [isActive, createdAt] index — matches actual ORDER BY
   @@index([isActive, priority, isVerified, clicks])
-  // Covers: WHERE merchantId=? AND isActive=true
   @@index([merchantId, isActive])
-  // Covers: WHERE source=? AND isActive=true
   @@index([source, isActive])
 }
 
-// ─── CouponCategory ──────────────────────────────────────────────────────────
 model CouponCategory {
   couponId   Int
   categoryId Int
@@ -81,16 +69,15 @@ model CouponCategory {
   @@index([categoryId])
 }
 
-// ─── ScrapeJob ───────────────────────────────────────────────────────────────
 model ScrapeJob {
   id           Int       @id @default(autoincrement())
-  source       String    @db.VarChar(30)
-  targetUrl    String                               // can be long, leave as TEXT
-  status       String    @default("pending") @db.VarChar(10)
+  source       String
+  targetUrl    String?
+  status       String    @default("pending")
   couponsFound Int       @default(0)
   newCoupons   Int       @default(0)
-  error        String?                              // stack traces can be long
-  triggeredBy  String    @default("scheduler") @db.VarChar(20)
+  error        String?
+  triggeredBy  String    @default("scheduler")
   startedAt    DateTime?
   completedAt  DateTime?
   createdAt    DateTime  @default(now())

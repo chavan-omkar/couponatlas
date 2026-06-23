@@ -97,9 +97,21 @@ export default function CouponCard({ coupon }) {
                 ✓ Verified
               </span>
             )}
-            <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${coupon.type === 'code' ? 'bg-orange-100 text-orange-600' : 'bg-teal-100 text-teal-600'}`}>
-              {coupon.type === 'code' ? 'Promo Code' : 'Deal'}
-            </span>
+            {coupon.priority === 1 && (
+              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-orange-100 text-orange-600">
+                Promo Code
+              </span>
+            )}
+            {coupon.priority === 2 && (
+              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-blue-100 text-blue-600">
+                🏦 Bank Offer
+              </span>
+            )}
+            {coupon.priority === 3 && (
+              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-teal-100 text-teal-600">
+                Deal
+              </span>
+            )}
           </div>
         </div>
 

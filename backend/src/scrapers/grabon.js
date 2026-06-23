@@ -64,6 +64,7 @@ class GrabOnScraper extends BaseScraper {
       .replace(/GET\s+DEAL/gi, '')
       .replace(/COPY/gi, '')
       .replace(/\s+/g, '')
+      .toUpperCase()
       .trim();
     if (/^[A-Z0-9]{3,20}$/.test(cleaned)) return cleaned;
     return null;

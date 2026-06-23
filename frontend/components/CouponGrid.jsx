@@ -1,7 +1,27 @@
 import CouponCard from './CouponCard';
 import AdUnit from './AdUnit';
 
-const AD_FREQUENCY = 6; // Insert in-feed ad every N coupons
+const AD_FREQUENCY = 6;
+
+const PRIORITY_LABELS = {
+  1: { icon: '🏷️', label: 'Promo Codes', sub: 'Copy & paste — works for everyone', color: 'text-orange-600 border-orange-200' },
+  2: { icon: '🏦', label: 'Bank & Card Offers', sub: 'Requires a specific bank card at checkout', color: 'text-blue-600 border-blue-200' },
+  3: { icon: '🎁', label: 'Deals & Offers', sub: 'No code needed — click to activate', color: 'text-teal-600 border-teal-200' },
+};
+
+function SectionHeader({ priority }) {
+  const meta = PRIORITY_LABELS[priority];
+  if (!meta) return null;
+  return (
+    <div className={`col-span-full flex items-center gap-3 mt-6 mb-1 pb-2 border-b ${meta.color}`}>
+      <span className="text-xl">{meta.icon}</span>
+      <div>
+        <p className="font-black text-sm">{meta.label}</p>
+        <p className="text-xs text-gray-400">{meta.sub}</p>
+      </div>
+    </div>
+  );
+}
 
 export default function CouponGrid({ coupons = [] }) {
   if (coupons.length === 0) {
@@ -15,13 +35,24 @@ export default function CouponGrid({ coupons = [] }) {
   }
 
   const items = [];
-  coupons.forEach((coupon, i) => {
+  let lastPriority = null;
+  let couponIndex = 0;
+
+  coupons.forEach((coupon) => {
+    // Insert section header when priority group changes
+    const p = coupon.priority ?? 3;
+    if (p !== lastPriority) {
+      items.push(<SectionHeader key={`section-${p}`} priority={p} />);
+      lastPriority = p;
+    }
+
     items.push(<CouponCard key={coupon.id} coupon={coupon} />);
 
-    // Insert in-feed ad every AD_FREQUENCY coupons (but not at the very end)
-    if ((i + 1) % AD_FREQUENCY === 0 && i < coupons.length - 1) {
+    // In-feed ad every AD_FREQUENCY coupons
+    couponIndex++;
+    if (couponIndex % AD_FREQUENCY === 0) {
       items.push(
-        <div key={`ad-${i}`} className="col-span-full py-2">
+        <div key={`ad-${couponIndex}`} className="col-span-full py-2">
           <AdUnit zone="infeed" />
         </div>
       );

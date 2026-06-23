@@ -29,7 +29,7 @@ async function runScraper(sourceName, triggeredBy = 'scheduler') {
   const job = await prisma.scrapeJob.create({
     data: {
       source: sourceName,
-      targetUrl: scraper.baseUrl,
+      targetUrl: scraper.baseUrl || null,
       status: 'running',
       triggeredBy,
       startedAt: new Date(),
@@ -122,16 +122,16 @@ async function upsertCoupon(raw, scraper) {
       updatedAt: new Date(),
     },
     create: {
-      title: trunc(raw.title, 200),
-      code: trunc(raw.code, 28) || null,
-      type: trunc(raw.type, 9) || 'deal',
-      discount: trunc(raw.discount, 58) || null,
-      description: trunc(raw.description, 490) || null,
+      title: trunc(raw.title, 500),
+      code: trunc(raw.code, 30) || null,
+      type: trunc(raw.type, 20) || 'deal',
+      discount: trunc(raw.discount, 200) || null,
+      description: trunc(raw.description, 2000) || null,
       expiryDate: raw.expiryDate || null,
       priority: raw.priority ?? 3,
       merchantId: merchant.id,
-      sourceUrl: trunc(raw.sourceUrl, 390),
-      source: trunc(raw.source, 28),
+      sourceUrl: trunc(raw.sourceUrl, 1000),
+      source: trunc(raw.source, 50),
       fingerprint,
     },
   });
