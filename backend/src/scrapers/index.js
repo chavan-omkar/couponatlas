@@ -76,29 +76,35 @@ async function runScraper(sourceName, triggeredBy = 'scheduler') {
   }
 }
 
+// Truncate helper — prevents P2000 if scraped text is unexpectedly long
+const trunc = (str, max) => (str && str.length > max ? str.slice(0, max) : str);
+
 /**
  * Upsert a single scraped coupon into the DB.
  * Uses fingerprint for deduplication.
  */
 async function upsertCoupon(raw, scraper) {
-  const merchantSlug = scraper.slugify(raw.merchantName);
+  const merchantSlug = trunc(scraper.slugify(raw.merchantName), 120);
   const fingerprint = scraper.fingerprint(merchantSlug, raw.code, raw.title);
 
   // Upsert merchant
   const merchant = await prisma.merchant.upsert({
     where: { slug: merchantSlug },
     update: {},
-    create: { name: raw.merchantName, slug: merchantSlug },
+    create: {
+      name: trunc(raw.merchantName, 120),
+      slug: merchantSlug,
+    },
   });
 
   // Upsert categories
   const categoryRecords = [];
   for (const catName of raw.categories || []) {
-    const catSlug = catName.toLowerCase().replace(/\s+/g, '-');
+    const catSlug = trunc(catName.toLowerCase().replace(/\s+/g, '-'), 60);
     const cat = await prisma.category.upsert({
       where: { slug: catSlug },
       update: {},
-      create: { name: catName, slug: catSlug },
+      create: { name: trunc(catName, 60), slug: catSlug },
     });
     categoryRecords.push(cat);
   }
@@ -112,16 +118,16 @@ async function upsertCoupon(raw, scraper) {
       updatedAt: new Date(),
     },
     create: {
-      title: raw.title,
-      code: raw.code || null,
-      type: raw.type || 'deal',
-      discount: raw.discount || null,
-      description: raw.description || null,
+      title: trunc(raw.title, 500),
+      code: trunc(raw.code, 30) || null,
+      type: trunc(raw.type, 10) || 'deal',
+      discount: trunc(raw.discount, 100) || null,
+      description: trunc(raw.description, 1000) || null,
       expiryDate: raw.expiryDate || null,
       priority: raw.priority ?? 3,
       merchantId: merchant.id,
-      sourceUrl: raw.sourceUrl,
-      source: raw.source,
+      sourceUrl: trunc(raw.sourceUrl, 500),
+      source: trunc(raw.source, 30),
       fingerprint,
     },
   });
