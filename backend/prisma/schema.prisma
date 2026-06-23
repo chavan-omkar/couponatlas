@@ -8,7 +8,6 @@ datasource db {
 }
 
 // ─── Merchant ────────────────────────────────────────────────────────────────
-// ~100 rows. Tight VarChar limits cut WAL bloat and fit index pages better.
 model Merchant {
   id        Int      @id @default(autoincrement())
   name      String   @db.VarChar(120)
@@ -21,7 +20,6 @@ model Merchant {
 }
 
 // ─── Category ────────────────────────────────────────────────────────────────
-// ~20 rows. Tiny table; VarChar still avoids TOAST overhead on wide rows.
 model Category {
   id      Int              @id @default(autoincrement())
   name    String           @db.VarChar(60)
@@ -31,50 +29,48 @@ model Category {
 }
 
 // ─── Coupon ──────────────────────────────────────────────────────────────────
-// Hot table — every API call hits this. Field widths are set to realistic maxes
-// so Postgres can store short rows inline (no TOAST round-trips).
 model Coupon {
-  id          Int    @id @default(autoincrement())
-  title       String @db.VarChar(220)             // ~99th-percentile coupon title length
-  code        String? @db.VarChar(30)             // real promo codes ≤ 20 chars; 30 gives headroom
-  type        String  @default("code") @db.VarChar(10) // 'code' | 'deal' | 'cashback'
-  discount    String? @db.VarChar(60)             // "Flat ₹500 off", "20% off", etc.
-  description String? @db.VarChar(500)            // short teaser, not full T&Cs
+  id          Int       @id @default(autoincrement())
+
+  // User-facing text — left as TEXT (no VarChar) since scraped content varies widely
+  title       String
+  description String?
+
+  // Short bounded fields — VarChar avoids TOAST for these
+  code        String?  @db.VarChar(30)            // real codes are ≤ 20 chars
+  type        String   @default("code") @db.VarChar(10) // 'code' | 'deal' | 'cashback'
+  discount    String?  @db.VarChar(80)            // "Flat ₹500 off", "20% off"
+
   expiryDate  DateTime?
 
   merchantId  Int
-  merchant    Merchant @relation(fields: [merchantId], references: [id])
+  merchant    Merchant  @relation(fields: [merchantId], references: [id])
 
-  sourceUrl   String  @db.VarChar(400)
-  source      String  @db.VarChar(30)             // 'coupondunia' | 'grabon' | 'direct' …
-  fingerprint String  @unique @db.Char(64)        // SHA-256 hex = exactly 64 chars
+  // sourceUrl left as TEXT — some sites have very long query-string URLs
+  sourceUrl   String
+  source      String   @db.VarChar(30)            // 'coupondunia' | 'grabon' | 'direct' …
+  fingerprint String   @unique @db.Char(64)       // SHA-256 hex = exactly 64 chars
 
   // SmallInt: only ever 1, 2, or 3 — saves 2 bytes per row vs Int
-  priority    Int     @default(3) @db.SmallInt    // 1=direct code, 2=bank code, 3=deal
+  priority    Int      @default(3) @db.SmallInt   // 1=direct code, 2=bank code, 3=deal
 
-  clicks      Int     @default(0)
-  isActive    Boolean @default(true)
-  isVerified  Boolean @default(false)
+  clicks      Int      @default(0)
+  isActive    Boolean  @default(true)
+  isVerified  Boolean  @default(false)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   categories  CouponCategory[]
 
-  // Index for the primary listing query:
-  // WHERE isActive=true ORDER BY priority ASC, isVerified DESC, clicks DESC
+  // Covers: WHERE isActive=true ORDER BY priority, isVerified DESC, clicks DESC
   @@index([isActive, priority, isVerified, clicks])
-
-  // Merchant filter (common): WHERE merchantId=? AND isActive=true
+  // Covers: WHERE merchantId=? AND isActive=true
   @@index([merchantId, isActive])
-
-  // Source filter (admin/scraper stats)
+  // Covers: WHERE source=? AND isActive=true
   @@index([source, isActive])
-
-  // Dropped: @@index([isActive, createdAt]) — superseded by the composite above
 }
 
 // ─── CouponCategory ──────────────────────────────────────────────────────────
-// Junction table. Composite PK doubles as the unique index — no extra index needed.
 model CouponCategory {
   couponId   Int
   categoryId Int
@@ -82,26 +78,23 @@ model CouponCategory {
   category   Category @relation(fields: [categoryId], references: [id])
 
   @@id([couponId, categoryId])
-  @@index([categoryId])  // forward lookup: all coupons in a category
+  @@index([categoryId])
 }
 
 // ─── ScrapeJob ───────────────────────────────────────────────────────────────
-// Write-heavy but rarely queried. Keep only the last 200 rows (pruned by the
-// scraper script after each run). Narrow columns keep each row under 200 bytes.
 model ScrapeJob {
-  id           Int      @id @default(autoincrement())
-  source       String   @db.VarChar(30)
-  targetUrl    String   @db.VarChar(300)
-  status       String   @default("pending") @db.VarChar(10) // 'pending'|'running'|'done'|'failed'
-  couponsFound Int      @default(0)
-  newCoupons   Int      @default(0)
-  error        String?  @db.VarChar(500)
-  triggeredBy  String   @default("scheduler") @db.VarChar(20)
+  id           Int       @id @default(autoincrement())
+  source       String    @db.VarChar(30)
+  targetUrl    String                               // can be long, leave as TEXT
+  status       String    @default("pending") @db.VarChar(10)
+  couponsFound Int       @default(0)
+  newCoupons   Int       @default(0)
+  error        String?                              // stack traces can be long
+  triggeredBy  String    @default("scheduler") @db.VarChar(20)
   startedAt    DateTime?
   completedAt  DateTime?
-  createdAt    DateTime @default(now())
+  createdAt    DateTime  @default(now())
 
-  // Most recent jobs first, filter by source or status
   @@index([source, createdAt(sort: Desc)])
   @@index([status, createdAt(sort: Desc)])
 }
