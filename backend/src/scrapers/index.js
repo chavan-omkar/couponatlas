@@ -48,9 +48,13 @@ async function runScraper(sourceName, triggeredBy = 'scheduler') {
         await upsertCoupon(raw, scraper);
         newCoupons++;
       } catch (err) {
-        // Fingerprint conflict = already exists, skip
-        if (err.code !== 'P2002') {
-          logger.warn(`[${sourceName}] Failed to upsert coupon "${raw.title}": ${err.message}`);
+        // P2002 = fingerprint conflict (already exists) — silent skip
+        if (err.code === 'P2002') continue;
+        // P2000 = value too long — log the full raw object so we can see which field
+        if (err.code === 'P2000') {
+          logger.warn(`[${sourceName}] P2000 on "${raw.title}" — lengths: title=${raw.title?.length} code=${raw.code?.length} desc=${raw.description?.length} url=${raw.sourceUrl?.length} src=${raw.source?.length} discount=${raw.discount?.length}`);
+        } else {
+          logger.warn(`[${sourceName}] Failed to upsert "${raw.title}": [${err.code}] ${err.message}`);
         }
       }
     }
@@ -118,16 +122,16 @@ async function upsertCoupon(raw, scraper) {
       updatedAt: new Date(),
     },
     create: {
-      title: trunc(raw.title, 500),
-      code: trunc(raw.code, 30) || null,
-      type: trunc(raw.type, 10) || 'deal',
-      discount: trunc(raw.discount, 100) || null,
-      description: trunc(raw.description, 1000) || null,
+      title: trunc(raw.title, 200),
+      code: trunc(raw.code, 28) || null,
+      type: trunc(raw.type, 9) || 'deal',
+      discount: trunc(raw.discount, 58) || null,
+      description: trunc(raw.description, 490) || null,
       expiryDate: raw.expiryDate || null,
       priority: raw.priority ?? 3,
       merchantId: merchant.id,
-      sourceUrl: trunc(raw.sourceUrl, 500),
-      source: trunc(raw.source, 30),
+      sourceUrl: trunc(raw.sourceUrl, 390),
+      source: trunc(raw.source, 28),
       fingerprint,
     },
   });
