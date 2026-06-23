@@ -3,11 +3,15 @@
 const prisma = require('../db/client');
 const CouponDuniaScraper = require('./coupondunia');
 const GrabOnScraper = require('./grabon');
+const CouponzGuruScraper = require('./couponzguru');
+const FoodDirectScraper = require('./food-direct');
 const logger = require('../utils/logger');
 
 const SCRAPERS = {
   coupondunia: CouponDuniaScraper,
   grabon: GrabOnScraper,
+  couponzguru: CouponzGuruScraper,
+  'food-direct': FoodDirectScraper,
 };
 
 /**
@@ -104,6 +108,7 @@ async function upsertCoupon(raw, scraper) {
     where: { fingerprint },
     update: {
       isActive: true,
+      priority: raw.priority ?? 3,
       updatedAt: new Date(),
     },
     create: {
@@ -113,6 +118,7 @@ async function upsertCoupon(raw, scraper) {
       discount: raw.discount || null,
       description: raw.description || null,
       expiryDate: raw.expiryDate || null,
+      priority: raw.priority ?? 3,
       merchantId: merchant.id,
       sourceUrl: raw.sourceUrl,
       source: raw.source,

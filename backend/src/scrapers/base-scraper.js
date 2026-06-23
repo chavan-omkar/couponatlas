@@ -4,10 +4,9 @@ const { chromium } = require('playwright');
 const crypto = require('crypto');
 const logger = require('../utils/logger');
 
-/**
- * BaseScraper — all site-specific scrapers extend this.
- * Handles: browser lifecycle, proxy rotation, retry logic, fingerprinting.
- */
+// Bank/card keywords that indicate a card-specific promo code
+const BANK_CODE_PATTERN = /HDFC|SBI|ICICI|AXIS|KOTAK|YESBANK|IDFC|BOBCARD|CANARA|PNB|UNION|AMEX|VISA|RUPAY|MASTER|CITI|INDUS|FEDERAL|PAYTMBANK|AIRTEL/i;
+
 class BaseScraper {
   constructor(name) {
     this.name = name;
@@ -17,13 +16,23 @@ class BaseScraper {
       : [];
   }
 
-  /** Generate dedup fingerprint for a coupon */
   fingerprint(merchantSlug, code, title) {
     const raw = `${merchantSlug}|${(code || '').toLowerCase().trim()}|${title.toLowerCase().trim()}`;
     return crypto.createHash('sha256').update(raw).digest('hex').slice(0, 32);
   }
 
-  /** Pick a random proxy from the list (or null if none configured) */
+  /**
+   * Determine coupon priority:
+   * 1 = direct usable code (copy & paste, works for anyone)
+   * 2 = bank/card-specific code (only works with specific card)
+   * 3 = deal / no code needed
+   */
+  detectPriority(code) {
+    if (!code) return 3;
+    if (BANK_CODE_PATTERN.test(code)) return 2;
+    return 1;
+  }
+
   randomProxy() {
     if (!this.proxyList.length) return null;
     return this.proxyList[Math.floor(Math.random() * this.proxyList.length)];
@@ -31,119 +40,100 @@ class BaseScraper {
 
   async launchBrowser() {
     const proxy = this.randomProxy();
-    const launchOptions = {
+    this.browser = await chromium.launch({
       headless: true,
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-blink-features=AutomationControlled',
-      ],
-    };
-    if (proxy) {
-      launchOptions.proxy = { server: proxy };
-    }
-    this.browser = await chromium.launch(launchOptions);
-    logger.info(`[${this.name}] Browser launched${proxy ? ` via proxy ${proxy}` : ''}`);
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-blink-features=AutomationControlled'],
+      ...(proxy ? { proxy: { server: proxy } } : {}),
+    });
+    logger.info(`[${this.name}] Browser launched`);
   }
 
   async closeBrowser() {
-    if (this.browser) {
-      await this.browser.close();
-      this.browser = null;
-    }
+    if (this.browser) { await this.browser.close(); this.browser = null; }
   }
 
   async newPage() {
     const ctx = await this.browser.newContext({
-      userAgent:
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
       viewport: { width: 1280, height: 800 },
       locale: 'en-IN',
     });
     const page = await ctx.newPage();
-
-    // Hide automation signals
     await page.addInitScript(() => {
       Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
     });
-
     return page;
   }
 
-  /**
-   * Navigate to a URL with retry logic.
-   * @param {import('playwright').Page} page
-   * @param {string} url
-   * @param {number} retries
-   */
   async navigate(page, url, retries = 3) {
     for (let attempt = 1; attempt <= retries; attempt++) {
       try {
-        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 20000 });
         return;
       } catch (err) {
         logger.warn(`[${this.name}] Navigate attempt ${attempt}/${retries} failed: ${err.message}`);
         if (attempt === retries) throw err;
-        await page.waitForTimeout(2000 * attempt);
+        await page.waitForTimeout(1500 * attempt);
       }
     }
   }
 
-  /**
-   * Slugify a merchant name → url-safe slug
-   */
   slugify(name) {
-    return name
-      .toLowerCase()
-      .replace(/[^a-z0-9\s-]/g, '')
-      .replace(/\s+/g, '-')
-      .replace(/-+/g, '-')
-      .trim();
+    return name.toLowerCase().replace(/[^a-z0-9\s-]/g, '').replace(/\s+/g, '-').replace(/-+/g, '-').trim();
   }
 
-  /**
-   * Parse a human-readable expiry string → Date or null
-   * Handles: "31 Dec 2024", "31-12-2024", "Expires in 3 days", etc.
-   */
   parseExpiry(str) {
     if (!str) return null;
     try {
-      // "in X days" pattern
       const daysMatch = str.match(/in\s+(\d+)\s+days?/i);
-      if (daysMatch) {
-        const d = new Date();
-        d.setDate(d.getDate() + parseInt(daysMatch[1]));
-        return d;
-      }
+      if (daysMatch) { const d = new Date(); d.setDate(d.getDate() + parseInt(daysMatch[1])); return d; }
       const parsed = new Date(str);
       return isNaN(parsed.getTime()) ? null : parsed;
-    } catch {
-      return null;
-    }
+    } catch { return null; }
   }
 
   /**
-   * Override in subclass — should return array of coupon objects:
-   * { title, code, type, discount, description, expiryDate, merchantName, sourceUrl, categories }
+   * Run tasks concurrently with a limit.
+   * Each task is a function () => Promise<result[]>
+   * Returns flat array of all results.
+   *
+   * @param {Function[]} tasks
+   * @param {number} limit - max parallel tasks (default 5)
    */
+  async runConcurrent(tasks, limit = 5) {
+    const results = [];
+    const queue = [...tasks];
+    const active = new Set();
+
+    return new Promise((resolve, reject) => {
+      const next = () => {
+        if (queue.length === 0 && active.size === 0) {
+          return resolve(results.flat());
+        }
+        while (active.size < limit && queue.length > 0) {
+          const task = queue.shift();
+          const p = task()
+            .then((r) => { results.push(r); })
+            .catch((err) => { logger.warn(`[${this.name}] Task error: ${err.message}`); results.push([]); })
+            .finally(() => { active.delete(p); next(); });
+          active.add(p);
+        }
+      };
+      next();
+    });
+  }
+
   async scrape() {
     throw new Error(`${this.name}.scrape() not implemented`);
   }
 
-  /**
-   * Run the full scrape with browser lifecycle management.
-   */
   async run() {
-    const results = [];
     await this.launchBrowser();
     try {
-      const coupons = await this.scrape();
-      results.push(...coupons);
-      logger.info(`[${this.name}] Scraped ${results.length} coupons`);
+      return await this.scrape();
     } finally {
       await this.closeBrowser();
     }
-    return results;
   }
 }
 

@@ -70,19 +70,10 @@ class GrabOnScraper extends BaseScraper {
   }
 
   async scrape() {
-    const allCoupons = [];
-
-    for (const store of this.stores) {
-      try {
-        const coupons = await this.scrapeStorePage(`${this.baseUrl}${store.path}`, store.name, store.cats);
-        allCoupons.push(...coupons);
-        await new Promise((r) => setTimeout(r, 1500 + Math.random() * 1000));
-      } catch (err) {
-        logger.error(`[${this.name}] Failed to scrape ${store.path}: ${err.message}`);
-      }
-    }
-
-    return allCoupons;
+    const tasks = this.stores.map(
+      (store) => () => this.scrapeStorePage(`${this.baseUrl}${store.path}`, store.name, store.cats)
+    );
+    return this.runConcurrent(tasks, 5);
   }
 
   async scrapeStorePage(url, merchantName, categories = ['Shopping']) {
@@ -104,19 +95,7 @@ class GrabOnScraper extends BaseScraper {
         await page.waitForTimeout(800);
       }
 
-      const merchantName = await page
-        .locator('h1, [class*="store-name"], [class*="merchant-name"]')
-        .first()
-        .textContent()
-        .catch(() => {
-          // Derive from URL: /amazon-coupons/ → amazon
-          return url
-            .split('/')
-            .filter(Boolean)
-            .pop()
-            .replace('-coupons', '')
-            .replace(/-/g, ' ');
-        });
+      // merchantName already passed as param — don't re-derive from page
 
       const cards = await page.evaluate((sourceUrl) => {
         const results = [];
@@ -213,13 +192,15 @@ class GrabOnScraper extends BaseScraper {
       for (const card of cards) {
         const title = this.cleanText(card.title);
         if (!title) continue;
+        const code = this.cleanCode(card.code);
         coupons.push({
           title,
-          code: this.cleanCode(card.code),
+          code,
           type: card.type,
           discount: this.cleanText(card.discount) || null,
           description: this.cleanText(card.description) || null,
           expiryDate: this.parseExpiry(card.expiryRaw),
+          priority: this.detectPriority(code),
           merchantName,
           sourceUrl: url,
           source: 'grabon',

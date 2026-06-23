@@ -44,7 +44,12 @@ router.get('/', async (req, res, next) => {
         where,
         skip,
         take: limit,
-        orderBy: [{ isVerified: 'desc' }, { clicks: 'desc' }, { createdAt: 'desc' }],
+        orderBy: [
+          { priority: 'asc' },    // 1=direct code, 2=bank code, 3=deal
+          { isVerified: 'desc' },
+          { clicks: 'desc' },
+          { createdAt: 'desc' },
+        ],
         include: {
           merchant: { select: { id: true, name: true, slug: true, logo: true } },
           categories: { include: { category: { select: { id: true, name: true, slug: true } } } },

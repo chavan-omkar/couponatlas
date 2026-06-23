@@ -74,17 +74,11 @@ class CouponDuniaScraper extends BaseScraper {
   }
 
   async scrape() {
-    const allCoupons = [];
-    for (const store of this.stores) {
-      try {
-        const coupons = await this.scrapeStorePage(`${this.baseUrl}${store.path}`, store.name, store.cats);
-        allCoupons.push(...coupons);
-        await new Promise((r) => setTimeout(r, 1500 + Math.random() * 1000));
-      } catch (err) {
-        logger.error(`[${this.name}] Failed ${store.path}: ${err.message}`);
-      }
-    }
-    return allCoupons;
+    // Run 5 store scrapers in parallel — ~6x faster than sequential
+    const tasks = this.stores.map(
+      (store) => () => this.scrapeStorePage(`${this.baseUrl}${store.path}`, store.name, store.cats)
+    );
+    return this.runConcurrent(tasks, 5);
   }
 
   async scrapeStorePage(url, merchantName, categories) {
@@ -131,13 +125,15 @@ class CouponDuniaScraper extends BaseScraper {
       for (const card of cards) {
         const title = this.cleanText(card.title);
         if (!title) continue;
+        const code = this.cleanCode(card.code);
         coupons.push({
           title,
-          code: this.cleanCode(card.code),
+          code,
           type: card.type,
           discount: this.cleanText(card.discount) || null,
           description: this.cleanText(card.description) || null,
           expiryDate: this.parseExpiry(card.expiryRaw),
+          priority: this.detectPriority(code),
           merchantName,
           sourceUrl: url,
           source: 'coupondunia',

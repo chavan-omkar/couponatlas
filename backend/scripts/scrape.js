@@ -9,10 +9,33 @@
 require('dotenv').config();
 
 const { runScraper } = require('../src/scrapers');
+const prisma = require('../src/db/client');
+
+// Keep only the 200 most recent ScrapeJob rows to prevent table bloat
+async function pruneJobHistory() {
+  try {
+    const cutoff = await prisma.scrapeJob.findMany({
+      orderBy: { id: 'desc' },
+      skip: 200,
+      take: 1,
+      select: { id: true },
+    });
+    if (cutoff.length > 0) {
+      const deleted = await prisma.scrapeJob.deleteMany({
+        where: { id: { lte: cutoff[0].id } },
+      });
+      console.log(`[scrape] Pruned ${deleted.count} old job records`);
+    }
+  } catch (err) {
+    console.warn(`[scrape] Job pruning failed (non-fatal): ${err.message}`);
+  }
+}
 
 const sources = {
   coupondunia: true,
   grabon: true,
+  couponzguru: true,
+  'food-direct': true,
 };
 
 async function main() {
@@ -45,6 +68,9 @@ async function main() {
 
   console.log(`\n[scrape] ── Summary ──`);
   console.log(`[scrape] Total found: ${totalFound}, Total new: ${totalNew}`);
+
+  await pruneJobHistory();
+  await prisma.$disconnect();
   process.exit(0);
 }
 

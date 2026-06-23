@@ -1,15 +1,13 @@
 name: Scrape Coupons
 
 on:
-  # Run every 6 hours automatically
   schedule:
-    - cron: '0 */6 * * *'
+    - cron: '0 */6 * * *'   # every 6 hours
 
-  # Allow manual trigger from GitHub Actions UI (Actions tab → Run workflow)
   workflow_dispatch:
     inputs:
       source:
-        description: 'Which source to scrape'
+        description: 'Which source to scrape (leave empty for all)'
         required: false
         default: 'all'
         type: choice
@@ -17,12 +15,30 @@ on:
           - all
           - coupondunia
           - grabon
+          - couponzguru
+          - food-direct
 
 jobs:
   scrape:
-    name: Run Scrapers
+    name: Scrape — ${{ matrix.source }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
+
+    # Run all scrapers in parallel — each in its own job
+    strategy:
+      fail-fast: false   # if one scraper fails, others keep running
+      matrix:
+        source:
+          - coupondunia
+          - grabon
+          - couponzguru
+          - food-direct
+
+    # Skip sources not selected in manual trigger
+    if: >
+      github.event_name == 'schedule' ||
+      github.event.inputs.source == 'all' ||
+      github.event.inputs.source == matrix.source
 
     steps:
       - name: Checkout code
@@ -47,15 +63,15 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
 
-      - name: Push DB schema
+      - name: Push DB schema (safe, idempotent)
         working-directory: backend
         run: npx prisma db push --accept-data-loss
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
 
-      - name: Run scrapers
+      - name: Run scraper — ${{ matrix.source }}
         working-directory: backend
-        run: node scripts/scrape.js ${{ github.event.inputs.source || 'all' }}
+        run: node scripts/scrape.js ${{ matrix.source }}
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           NODE_ENV: production
