@@ -13,16 +13,34 @@ class GrabOnScraper extends BaseScraper {
     super('GrabOn');
     this.baseUrl = 'https://www.grabon.in';
     this.stores = [
-      { path: '/amazon-coupons/',   name: 'Amazon' },
-      { path: '/flipkart-coupons/', name: 'Flipkart' },
-      { path: '/myntra-coupons/',   name: 'Myntra' },
-      { path: '/ajio-coupons/',     name: 'AJIO' },
-      { path: '/nykaa-coupons/',    name: 'Nykaa' },
-      { path: '/swiggy-coupons/',   name: 'Swiggy' },
-      { path: '/zomato-coupons/',   name: 'Zomato' },
-      { path: '/meesho-coupons/',   name: 'Meesho' },
-      { path: '/snapdeal-coupons/', name: 'Snapdeal' },
-      { path: '/paytm-coupons/',    name: 'Paytm' },
+      // 🛒 Shopping
+      { path: '/amazon-coupons/',        name: 'Amazon',        cats: ['Shopping', 'E-commerce'] },
+      { path: '/flipkart-coupons/',      name: 'Flipkart',      cats: ['Shopping', 'E-commerce'] },
+      { path: '/meesho-coupons/',        name: 'Meesho',        cats: ['Shopping', 'Fashion'] },
+      { path: '/snapdeal-coupons/',      name: 'Snapdeal',      cats: ['Shopping', 'E-commerce'] },
+      { path: '/jiomart-coupons/',       name: 'JioMart',       cats: ['Shopping', 'Grocery'] },
+      { path: '/bigbasket-coupons/',     name: 'BigBasket',     cats: ['Grocery'] },
+      { path: '/blinkit-coupons/',       name: 'Blinkit',       cats: ['Grocery'] },
+      // 👗 Fashion & Beauty
+      { path: '/myntra-coupons/',        name: 'Myntra',        cats: ['Fashion', 'Clothing'] },
+      { path: '/ajio-coupons/',          name: 'AJIO',          cats: ['Fashion', 'Clothing'] },
+      { path: '/nykaa-coupons/',         name: 'Nykaa',         cats: ['Beauty', 'Fashion'] },
+      { path: '/bewakoof-coupons/',      name: 'Bewakoof',      cats: ['Fashion', 'Clothing'] },
+      // 🍔 Food
+      { path: '/swiggy-coupons/',        name: 'Swiggy',        cats: ['Food & Dining'] },
+      { path: '/zomato-coupons/',        name: 'Zomato',        cats: ['Food & Dining'] },
+      { path: '/dominos-coupons/',       name: "Domino's",      cats: ['Food & Dining'] },
+      { path: '/pizzahut-coupons/',      name: 'Pizza Hut',     cats: ['Food & Dining'] },
+      // ✈️ Travel
+      { path: '/makemytrip-coupons/',    name: 'MakeMyTrip',    cats: ['Travel'] },
+      { path: '/goibibo-coupons/',       name: 'Goibibo',       cats: ['Travel'] },
+      { path: '/oyo-coupons/',           name: 'OYO',           cats: ['Travel', 'Hotels'] },
+      { path: '/cleartrip-coupons/',     name: 'Cleartrip',     cats: ['Travel'] },
+      // 💳 Payments
+      { path: '/paytm-coupons/',         name: 'Paytm',         cats: ['Payments', 'Wallet'] },
+      { path: '/phonepe-coupons/',       name: 'PhonePe',       cats: ['Payments', 'Wallet'] },
+      // 💻 Electronics
+      { path: '/croma-coupons/',         name: 'Croma',         cats: ['Electronics'] },
     ];
   }
 
@@ -56,7 +74,7 @@ class GrabOnScraper extends BaseScraper {
 
     for (const store of this.stores) {
       try {
-        const coupons = await this.scrapeStorePage(`${this.baseUrl}${store.path}`, store.name);
+        const coupons = await this.scrapeStorePage(`${this.baseUrl}${store.path}`, store.name, store.cats);
         allCoupons.push(...coupons);
         await new Promise((r) => setTimeout(r, 1500 + Math.random() * 1000));
       } catch (err) {
@@ -67,7 +85,7 @@ class GrabOnScraper extends BaseScraper {
     return allCoupons;
   }
 
-  async scrapeStorePage(url, merchantName) {
+  async scrapeStorePage(url, merchantName, categories = ['Shopping']) {
     const page = await this.newPage();
     const coupons = [];
 
@@ -205,7 +223,7 @@ class GrabOnScraper extends BaseScraper {
           merchantName,
           sourceUrl: url,
           source: 'grabon',
-          categories: this.inferCategories(merchantName),
+          categories,
         });
       }
 

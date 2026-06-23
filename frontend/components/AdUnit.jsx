@@ -60,13 +60,6 @@ export default function AdUnit({ zone = 'infeed', className = '' }) {
     );
   }
 
-  // Development: render placeholder
-  return (
-    <div
-      className={`flex items-center justify-center bg-gray-100 border-2 border-dashed border-gray-300 rounded-lg text-gray-400 text-xs font-medium ${config.className} ${className}`}
-      aria-label="Advertisement"
-    >
-      Ad · {config.label}
-    </div>
-  );
+  // No AdSense configured — render nothing
+  return null;
 }
