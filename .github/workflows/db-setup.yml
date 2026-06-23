@@ -33,30 +33,27 @@ jobs:
         working-directory: backend
         run: npm install
 
+      - name: Generate Prisma client
+        working-directory: backend
+        run: ./node_modules/.bin/prisma generate
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
       - name: Drop all tables (only if reset=true)
         if: github.event.inputs.reset == 'true'
         working-directory: backend
         run: |
           node -e "
-          const { Client } = require('pg');
-          const client = new Client({ connectionString: process.env.DATABASE_URL });
-          client.connect()
-            .then(() => client.query(\`
-              DROP TABLE IF EXISTS \"CouponCategory\" CASCADE;
-              DROP TABLE IF EXISTS \"Coupon\" CASCADE;
-              DROP TABLE IF EXISTS \"ScrapeJob\" CASCADE;
-              DROP TABLE IF EXISTS \"Category\" CASCADE;
-              DROP TABLE IF EXISTS \"Merchant\" CASCADE;
-            \`))
-            .then(() => { console.log('Tables dropped'); client.end(); })
+          const { PrismaClient } = require('@prisma/client');
+          const prisma = new PrismaClient();
+          prisma.\$executeRawUnsafe('DROP TABLE IF EXISTS \"CouponCategory\" CASCADE')
+            .then(() => prisma.\$executeRawUnsafe('DROP TABLE IF EXISTS \"Coupon\" CASCADE'))
+            .then(() => prisma.\$executeRawUnsafe('DROP TABLE IF EXISTS \"ScrapeJob\" CASCADE'))
+            .then(() => prisma.\$executeRawUnsafe('DROP TABLE IF EXISTS \"Category\" CASCADE'))
+            .then(() => prisma.\$executeRawUnsafe('DROP TABLE IF EXISTS \"Merchant\" CASCADE'))
+            .then(() => { console.log('All tables dropped'); return prisma.\$disconnect(); })
             .catch(e => { console.error(e.message); process.exit(1); });
           "
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-
-      - name: Generate Prisma client
-        working-directory: backend
-        run: ./node_modules/.bin/prisma generate
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
 
